@@ -2,7 +2,11 @@ package request
 
 import (
 	"io"
+	"slice"
+	"strings"
 )
+
+HTTPMethods := []string{"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
 
 // HTTP request, composed by a:
 // request-line: this is a start-line but specificially for client requests
@@ -22,5 +26,54 @@ type RequestLine struct {
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	return nil, nil
+	in, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	
+	request_string := string(in)
+	sections := strings.Split(request_string, "\r\n")
+	sections_len := len(sections)
+	
+	// Check for request with wrong number of sections: empty or greater than 3
+	if sections_len == 0 || sections_len > 3 {
+		return nil, fmt.Errorf("Error: Malformed request. Number of sections: %d", sections_len)
+	}
+	
+	request := Request{}
+	log.Println(request_string)
+	log.Println(request_len)
+	if sections_len >= 1 {
+		requestLine := sections[0]
+		parts := strings.Split(requestLine, " ")
+		// request-line is composed of Method, Request Target and HTTP Version
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("Error: Malformed request-line: '%s'", requestLine)
+		}
+
+		method := parts[0]
+		if !slices.Contains(HTTPMethods, method) {
+			return nil, fmt.Errof("Error: Incorrect HTTP Method: %s", method)
+		}
+		
+		path := parts[1]
+		if !strings.HasPrefix(path, "/") {
+			return nil, fmt.Printf("Error: Malformed Request Target: %s", path)
+		}
+		
+		httpVersion := parts[2]
+		version_parts := strings.Split(parts[2], "/")
+		if version_parts[0] != "HTTP" || version_parts[1] != "1.1" {
+			return nil, fmt.Errorf("Error: Malformed HTTP version: %s", httpVersion)
+		}
+
+		request.RequestLine.Method = method
+		request.RequestLine.RequestTarget = path
+		request.RequestLine.HttpVersion = httpVersion
+
+		return request, nil
+	}
+
+	return nil, fmt.Errorf("Error: Malformed Request: %s", request_string)
+	
 }
