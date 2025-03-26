@@ -1,12 +1,14 @@
 package request
 
 import (
+	"fmt"
 	"io"
-	"slice"
+	"log"
+	"slices"
 	"strings"
 )
 
-HTTPMethods := []string{"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
+var HTTPMethods = []string{"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
 
 // HTTP request, composed by a:
 // request-line: this is a start-line but specificially for client requests
@@ -30,19 +32,14 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	request_string := string(in)
 	sections := strings.Split(request_string, "\r\n")
 	sections_len := len(sections)
-	
-	// Check for request with wrong number of sections: empty or greater than 3
-	if sections_len == 0 || sections_len > 3 {
-		return nil, fmt.Errorf("Error: Malformed request. Number of sections: %d", sections_len)
-	}
-	
+
 	request := Request{}
 	log.Println(request_string)
-	log.Println(request_len)
+	log.Println(sections_len)
 	if sections_len >= 1 {
 		requestLine := sections[0]
 		parts := strings.Split(requestLine, " ")
@@ -53,14 +50,14 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		method := parts[0]
 		if !slices.Contains(HTTPMethods, method) {
-			return nil, fmt.Errof("Error: Incorrect HTTP Method: %s", method)
+			return nil, fmt.Errorf("Error: Incorrect HTTP Method: %s", method)
 		}
-		
+
 		path := parts[1]
 		if !strings.HasPrefix(path, "/") {
-			return nil, fmt.Printf("Error: Malformed Request Target: %s", path)
+			return nil, fmt.Errorf("Error: Malformed Request Target: %s", path)
 		}
-		
+
 		httpVersion := parts[2]
 		version_parts := strings.Split(parts[2], "/")
 		if version_parts[0] != "HTTP" || version_parts[1] != "1.1" {
@@ -69,11 +66,11 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		request.RequestLine.Method = method
 		request.RequestLine.RequestTarget = path
-		request.RequestLine.HttpVersion = httpVersion
+		request.RequestLine.HttpVersion = version_parts[1]
 
-		return request, nil
+		return &request, nil
 	}
 
 	return nil, fmt.Errorf("Error: Malformed Request: %s", request_string)
-	
+
 }
