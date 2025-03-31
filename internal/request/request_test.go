@@ -25,7 +25,31 @@ func TestRequestLineParse(t *testing.T) {
 	assert.Equal(t, "/coffee", r.RequestLine.RequestTarget)
 	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
 
+	// Test Good POST RequestLine
+	r, err = RequestFromReader(strings.NewReader("POST / HTTP/1.1\r\nHost: localhost:42069\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\nfield1=value1&field2=value2"))
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Equal(t, "POST", r.RequestLine.Method)
+	assert.Equal(t, "/", r.RequestLine.RequestTarget)
+	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+
+	// Test Good POST RequestLine with path
+	r, err = RequestFromReader(strings.NewReader("POST /test HTTP/1.1\r\nHost: localhost:42069\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\nfield1=value1&field2=value2"))
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Equal(t, "POST", r.RequestLine.Method)
+	assert.Equal(t, "/test", r.RequestLine.RequestTarget)
+	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
+
 	// Test: Invalid number of parts in request line
 	_, err = RequestFromReader(strings.NewReader("/coffee HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n"))
+	require.Error(t, err)
+
+	// Test: Out of order parts in request line
+	_, err = RequestFromReader(strings.NewReader("/coffee GET HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n"))
+	require.Error(t, err)
+
+	// Test: Invalid HTTP version in request line
+	_, err = RequestFromReader(strings.NewReader("GET / HTTP/2.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n"))
 	require.Error(t, err)
 }

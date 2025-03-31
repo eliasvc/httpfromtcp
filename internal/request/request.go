@@ -3,7 +3,6 @@ package request
 import (
 	"fmt"
 	"io"
-	"log"
 	"slices"
 	"strings"
 )
@@ -35,42 +34,43 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 	request_string := string(in)
 	sections := strings.Split(request_string, "\r\n")
-	sections_len := len(sections)
 
-	request := Request{}
-	log.Println(request_string)
-	log.Println(sections_len)
-	if sections_len >= 1 {
-		requestLine := sections[0]
-		parts := strings.Split(requestLine, " ")
-		// request-line is composed of Method, Request Target and HTTP Version
-		if len(parts) != 3 {
-			return nil, fmt.Errorf("Error: Malformed request-line: '%s'", requestLine)
-		}
-
-		method := parts[0]
-		if !slices.Contains(HTTPMethods, method) {
-			return nil, fmt.Errorf("Error: Incorrect HTTP Method: %s", method)
-		}
-
-		path := parts[1]
-		if !strings.HasPrefix(path, "/") {
-			return nil, fmt.Errorf("Error: Malformed Request Target: %s", path)
-		}
-
-		httpVersion := parts[2]
-		version_parts := strings.Split(parts[2], "/")
-		if version_parts[0] != "HTTP" || version_parts[1] != "1.1" {
-			return nil, fmt.Errorf("Error: Malformed HTTP version: %s", httpVersion)
-		}
-
-		request.RequestLine.Method = method
-		request.RequestLine.RequestTarget = path
-		request.RequestLine.HttpVersion = version_parts[1]
-
-		return &request, nil
+	// A section length of less than 2 means the request was either empty
+	// or didn't have a single "\r\n"
+	if len(sections) < 2 {
+		return nil, fmt.Errorf("Error: Malformed request: %s", request_string)
 	}
 
-	return nil, fmt.Errorf("Error: Malformed Request: %s", request_string)
+	request := Request{}
+	requestLine := sections[0]
+	parts := strings.Split(requestLine, " ")
+	// request-line is composed of Method, Request Target and HTTP Version
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("Error: Malformed request-line: '%s'", requestLine)
+	}
+
+	method := parts[0]
+	if !slices.Contains(HTTPMethods, method) {
+		return nil, fmt.Errorf("Error: Incorrect HTTP Method: %s", method)
+	}
+
+	path := parts[1]
+	if !strings.HasPrefix(path, "/") {
+		return nil, fmt.Errorf("Error: Malformed Request Target: %s", path)
+	}
+
+	httpVersion := parts[2]
+	version_parts := strings.Split(parts[2], "/")
+	if version_parts[0] != "HTTP" || version_parts[1] != "1.1" {
+		return nil, fmt.Errorf("Error: Malformed HTTP version: %s", httpVersion)
+	}
+
+	request.RequestLine.Method = method
+	request.RequestLine.RequestTarget = path
+	request.RequestLine.HttpVersion = version_parts[1]
+
+	return &request, nil
+
+	//return nil, fmt.Errorf("Error: Malformed Request: %s", request_string)
 
 }
