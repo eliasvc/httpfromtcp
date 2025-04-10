@@ -12,12 +12,18 @@ const crlf = "\r\n"
 
 var HTTPMethods = []string{"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
 
+// Meant for tracking that state of a Request
+// 1: initialized
+// 0: done
+type State int
+
 // HTTP request, composed by a:
 // request-line: this is a start-line but specificially for client requests
 // fields/headers
 // body
 type Request struct {
 	RequestLine RequestLine
+	State       State
 }
 
 // HTTP start-line, which is called a request-line for client requests,
@@ -30,33 +36,81 @@ type RequestLine struct {
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	in, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
+	buf := make([]byte, 8)
+	// requestLineBuf is the container of all data until crlf is found, which marks
+	// the request-line
+	var requestLineBuf []byte
+	var request Request
+	request.State = 1
+	for {
+		// Try to readh len(buf) data into buf:= make([]byte, 8, 8)
+		bytes_read, reader_err := io.ReadFull(reader, buf)
+		fmt.Printf("DEBUG: buf: '%v'\n", buf)
+		// Concatenate previous request-line contents with buf
+		requestLineBuf = slices.Concat(requestLineBuf, buf[:bytes_read])
+		fmt.Printf("DEBUG: requestLineBuf: '%v'\n", []byte(requestLineBuf))
+		fmt.Printf("DEBUG: %s\n", requestLineBuf)
+		// Try to parse what we have to see if we finally have a complete request-line
+		nParsed, parser_err := request.parse(requestLineBuf)
+		// No crlf found yet, keep reading
+		if nParsed == 0 && parser_err == nil && reader_err == nil {
+			continue
+		}
+		// request-line found
+		if nParsed > 0 && parser_err == nil {
+			break
+		}
+		// Some error found while parsing
+		if nParsed > 0 && parser_err != nil {
+			return nil, parser_err
+		}
+		// Reached a reader error without a succesful request-line parsing
+		if reader_err == io.EOF {
+			break
+		}
 	}
-
-	requestLine, err := parseRequestLine(in)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Request{
-		RequestLine: *requestLine,
-	}, nil
+	fmt.Println(request)
+	return &request, nil
 }
 
-func parseRequestLine(data []byte) (*RequestLine, error) {
+func (r *Request) parse(data []byte) (int, error) {
+	if r.State < 0 || r.State > 1 {
+		return 0, fmt.Errorf("Error: unknown state: %d", r.State)
+	}
+
+	if r.State == 0 {
+		return 0, fmt.Errorf("Error: uninitialized parser")
+	}
+
+	requestLine, n, err := parseRequestLine(data)
+	if err == nil && n == 0 {
+		// If no bytes were processed and there was no error, then we just need more data
+		// Signal this by passing a nil error
+		return n, nil
+	}
+
+	if err != nil {
+		return n, err
+	}
+
+	r.RequestLine = *requestLine
+	// We're done, so the parser can be updated appropriately
+	r.State = 0
+	return n, nil
+}
+
+func parseRequestLine(data []byte) (*RequestLine, int, error) {
 	// The first line that ends in CRLF is your request-line
 	crlfIndex := bytes.Index(data, []byte(crlf))
 	if crlfIndex == -1 {
-		return nil, fmt.Errorf("could not find CRLF in request-line")
+		return nil, 0, nil
 	}
 	requestLineText := string(data[:crlfIndex])
 	requestLine, err := requestLineFromString(requestLineText)
 	if err != nil {
-		return nil, err
+		return nil, crlfIndex, err
 	}
-	return requestLine, nil
+	return requestLine, crlfIndex, nil
 }
 
 func requestLineFromString(requestLineText string) (*RequestLine, error) {
@@ -69,18 +123,22 @@ func requestLineFromString(requestLineText string) (*RequestLine, error) {
 
 	method := parts[0]
 	if !slices.Contains(HTTPMethods, method) {
-		return nil, fmt.Errorf("Error: Incorrect HTTP Method: %s", method)
+		fmt.Printf("RequestLineText in requestLineFromString: '%v'\n", requestLineText)
+		fmt.Printf("'%v'\n", []byte(method))
+		fmt.Println("HTTPMethods: ", HTTPMethods)
+		fmt.Println(slices.Contains(HTTPMethods, "GET"))
+		return nil, fmt.Errorf("Error: Incorrect HTTP Method: '%v'", method)
 	}
 
 	path := parts[1]
 	if !strings.HasPrefix(path, "/") {
-		return nil, fmt.Errorf("Error: Malformed Request Target: %s", path)
+		return nil, fmt.Errorf("Error: Malformed Request Target: '%s'", path)
 	}
 
 	httpVersion := parts[2]
 	version_parts := strings.Split(parts[2], "/")
 	if version_parts[0] != "HTTP" || version_parts[1] != "1.1" {
-		return nil, fmt.Errorf("Error: Malformed HTTP version: %s", httpVersion)
+		return nil, fmt.Errorf("Error: Malformed HTTP version: '%s'", httpVersion)
 	}
 
 	return &RequestLine{
