@@ -2,10 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io"
+	"httpfromtcp/internal/request"
 	"log"
 	"net"
-	"strings"
 )
 
 func main() {
@@ -20,48 +19,14 @@ func main() {
 			log.Fatalf("Error: %s", err)
 		}
 		fmt.Println("Connection accepted")
-		lines := getLinesChannel(conn)
-		for line := range lines {
-			fmt.Println(line)
+		r, err := request.RequestFromReader(conn)
+		if err != nil {
+			log.Print(err)
 		}
+		fmt.Printf(`Request line:
+			- Method: %s
+			- Target: %s 
+			- Version: %s
+			`, r.RequestLine.Method, r.RequestLine.RequestTarget, r.RequestLine.HttpVersion)
 	}
-
-}
-
-func getLinesChannel(f io.ReadCloser) <-chan string {
-
-	lines := make(chan string)
-	var currentLine string
-	buffer := make([]byte, 8)
-	go func() {
-		for {
-			n, err := f.Read(buffer)
-			parts := strings.Split(string(buffer[:n]), "\n")
-			// If len == 1 then no \n was encountered
-			if len(parts) == 1 {
-				currentLine += parts[0]
-			}
-			// When a \n is encountered, we want to concat whatever we already have in currentLine
-			// plus the first part, which forms a complete line. Then we'll want to reset currentLine
-			// with the next part. Every part of the slice is actually a complete line, except for the
-			// start and the end.
-			if len(parts) > 1 {
-				currentLine += parts[0]
-				for i := 1; i < len(parts); i++ {
-					lines <- currentLine
-					currentLine = parts[i]
-				}
-			}
-
-			if err == io.EOF {
-				if currentLine != "" {
-					lines <- currentLine
-				}
-				close(lines)
-				fmt.Println("Connection terminated")
-				break
-			}
-		}
-	}()
-	return lines
 }
