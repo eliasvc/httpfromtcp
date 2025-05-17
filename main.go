@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
+	"net"
 	"strings"
 )
 
@@ -12,14 +12,22 @@ const bufSize = 8
 
 func main() {
 
-	f, err := os.Open("messages.txt")
+	l, err := net.Listen("tcp", ":42069")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error opening port: %q\n", err)
 	}
 
-	ch := getLinesChannel(f)
-	for line := range ch {
-		fmt.Printf("read: %s\n", line)
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			log.Fatalf("Error accepting connection: %s\n", err)
+		}
+		fmt.Println("Connection accepted")
+
+		ch := getLinesChannel(conn)
+		for line := range ch {
+			fmt.Printf("%s\n", line)
+		}
 	}
 }
 
