@@ -29,13 +29,14 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 	go func() {
 		buf := make([]byte, bufSize, bufSize)
 		var currentLine string
+		defer f.Close()
+		defer close(out)
 		for {
 			n, err := f.Read(buf)
 			if err != nil && err != io.EOF {
 				log.Fatalf("Error reading the file: %q\n", err)
 			}
 			if err == io.EOF {
-				close(out)
 				break
 			}
 			sBuf := string(buf[0:n])
@@ -50,9 +51,6 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 
 			// Add the last part, which doesn't include '\n'
 			currentLine += parts[len(parts)-1]
-		}
-		if currentLine != "" {
-			out <- currentLine
 		}
 	}()
 	return out
