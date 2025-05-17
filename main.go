@@ -16,6 +16,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error opening port: %q\n", err)
 	}
+	defer l.Close()
 
 	for {
 		conn, err := l.Accept()
@@ -26,7 +27,7 @@ func main() {
 
 		ch := getLinesChannel(conn)
 		for line := range ch {
-			fmt.Printf("%s\n", line)
+			fmt.Printf("read: %s\n", line)
 		}
 	}
 }
@@ -45,6 +46,10 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 				log.Fatalf("Error reading the file: %q\n", err)
 			}
 			if err == io.EOF {
+				// Dump whatever was read when EOF hit
+				if currentLine != "" {
+					out <- currentLine
+				}
 				break
 			}
 			sBuf := string(buf[0:n])
