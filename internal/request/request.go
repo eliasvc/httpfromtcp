@@ -7,8 +7,35 @@ import (
 	"strings"
 )
 
+type parserState int
+
+const (
+	Done parserState = iota
+	Initialized
+)
+
+// Enum tracks the state of the parser:
+// - 0: done
+// - 1: initialized
 type Request struct {
 	RequestLine RequestLine
+	pState      parserState
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	n, requestLine, err := parseRequestLine(data)
+	// parser didn't find CRLF
+	if err == nil && n == 0 {
+		r.pState = Initialized
+		return n, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	r.RequestLine = requestLine
+	r.pState = Done
+	return n, nil
 }
 
 type RequestLine struct {
@@ -19,20 +46,33 @@ type RequestLine struct {
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	request := Request{}
-	inputRequest, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("Error reading request: %q\n", err.Error())
-	}
+	buf := make([]byte, 0, 512)
+	for {
+		n, err := reader.Read(buf[len(buf):cap(buf)])
+		buf = buf[:len(buf)+n]
+		if err != nil && err != io.EOF {
+			return nil, fmt.Errorf("Error reading request: %q\n", err.Error())
+		}
 
-	request.RequestLine, err = parseRequestLine(inputRequest)
-	if err != nil {
-		return nil, fmt.Errorf("Error parsing request-line: %q\n", err)
-	}
+		_, err = request.parse(buf)
+		if err != nil {
+			return nil, fmt.Errorf("Error parsing request-line: %q\n", err)
+		}
+		if request.pState == Done {
+			return &request, nil
+		}
 
-	return &request, nil
+		if len(buf) == cap(buf) {
+			// Use the io.ReadAll capacity extension trick
+			buf = append(buf, 0)[:len(buf)]
+		}
+	}
 }
 
-func parseRequestLine(inputRequest []byte) (RequestLine, error) {
+// parseRequestLine parses the request line from the HTTP request contained in inputRequest.
+// If CRLF is not found, it is assummed that we need more data and so it returns err == nil.
+// A successful call returns the number of bytes processed, a RequestLine and err == nil.
+func parseRequestLine(inputRequest []byte) (int, RequestLine, error) {
 	var requestLine RequestLine
 	validMethod := regexp.MustCompile(`[A-Z]+`)
 	validHTTPVersion := "HTTP/1.1"
@@ -40,7 +80,7 @@ func parseRequestLine(inputRequest []byte) (RequestLine, error) {
 	inputRequestText := string(inputRequest)
 	crlfIndex := strings.Index(inputRequestText, "\r\n")
 	if crlfIndex == -1 {
-		return requestLine, fmt.Errorf("CRLF not found on request-line")
+		return 0, requestLine, nil
 	}
 	requestLineText := inputRequestText[:crlfIndex]
 
@@ -49,17 +89,17 @@ func parseRequestLine(inputRequest []byte) (RequestLine, error) {
 	// where SP is single space. So it has to have only 3 parts if devided by
 	// space
 	if len(parts) != 3 {
-		return requestLine, fmt.Errorf("Malformed request-line: %q\n", requestLineText)
+		return crlfIndex, requestLine, fmt.Errorf("Malformed request-line: %q\n", requestLineText)
 	}
 
 	method, target, version := parts[0], parts[1], parts[2]
 
 	if !validMethod.MatchString(method) {
-		return requestLine, fmt.Errorf("Malformed method in request-line: %q\n", requestLineText)
+		return crlfIndex, requestLine, fmt.Errorf("Malformed method in request-line: %q\n", requestLineText)
 	}
 
 	if validHTTPVersion != version {
-		return requestLine, fmt.Errorf("Malformed HTTP version in request-line: %q\n", requestLineText)
+		return crlfIndex, requestLine, fmt.Errorf("Malformed HTTP version in request-line: %q\n", requestLineText)
 	}
 	versionParts := strings.Split(version, "/")
 	httpVersion := versionParts[1]
@@ -68,5 +108,5 @@ func parseRequestLine(inputRequest []byte) (RequestLine, error) {
 	requestLine.RequestTarget = target
 	requestLine.HttpVersion = httpVersion
 
-	return requestLine, nil
+	return crlfIndex, requestLine, nil
 }
