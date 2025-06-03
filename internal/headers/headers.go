@@ -38,9 +38,13 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	headerName = strings.ToLower(headerName)
 
 	headerValue = strings.TrimSpace(headerValue)
-	headerValue = strings.ToLower(headerValue)
 
-	h[headerName] = headerValue
+	// Combine field-values if the same field-name is already present
+	if _, ok := h[headerName]; ok {
+		h[headerName] = fmt.Sprintf("%s, %s", h[headerName], headerValue)
+	} else {
+		h[headerName] = headerValue
+	}
 
 	return crlfIndex + len(crlf), false, nil
 }

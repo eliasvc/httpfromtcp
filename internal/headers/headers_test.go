@@ -29,16 +29,26 @@ func TestHeadersParse(t *testing.T) {
 
 	// Test: Valid 2 headers with existing headers
 	headers = Headers{
-		"host":           "localhost",
-		"content-length": "599",
+		"host": "localhost",
 	}
-	data = []byte("Host: localhost:42069\r\nContent-Length: 69\r\n\r\n")
+	data = []byte("User-Agent: Mozilla/5.0\r\nAccept: */*\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	assert.NoError(t, err)
+	assert.Equal(t, 25, n)
+	assert.False(t, done)
+	assert.Equal(t, headers["host"], "localhost")
+	assert.Equal(t, headers["user-agent"], "Mozilla/5.0")
+
+	// Test: Valid header with same existing header-name
+	headers = Headers{
+		"host": "localhost",
+	}
+	data = []byte("Host: localhost:42069\r\n\r\n")
 	n, done, err = headers.Parse(data)
 	assert.NoError(t, err)
 	assert.Equal(t, 23, n)
 	assert.False(t, done)
-	assert.Equal(t, headers["host"], "localhost:42069")
-	assert.Equal(t, headers["content-length"], "599")
+	assert.Equal(t, headers["host"], "localhost, localhost:42069")
 
 	// Test: Valid done
 	headers = NewHeaders()
