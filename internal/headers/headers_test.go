@@ -8,13 +8,14 @@ import (
 )
 
 func TestHeadersParse(t *testing.T) {
-	// Test: Valid single header
+	// Test: Valid single header and all-lowercase header
 	headers := NewHeaders()
 	data := []byte("Host: localhost:42069\r\n\r\n")
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	assert.Equal(t, "localhost:42069", headers["Host"])
+	assert.Equal(t, "localhost:42069", headers["host"])
+	assert.Equal(t, "", headers["Host"])
 	assert.Equal(t, 23, n)
 	assert.False(t, done)
 
@@ -28,16 +29,16 @@ func TestHeadersParse(t *testing.T) {
 
 	// Test: Valid 2 headers with existing headers
 	headers = Headers{
-		"Host":           "localhost",
-		"Content-Length": "599",
+		"host":           "localhost",
+		"content-length": "599",
 	}
 	data = []byte("Host: localhost:42069\r\nContent-Length: 69\r\n\r\n")
 	n, done, err = headers.Parse(data)
 	assert.NoError(t, err)
 	assert.Equal(t, 23, n)
 	assert.False(t, done)
-	assert.Equal(t, headers["Host"], "localhost:42069")
-	assert.Equal(t, headers["Content-Length"], "599")
+	assert.Equal(t, headers["host"], "localhost:42069")
+	assert.Equal(t, headers["content-length"], "599")
 
 	// Test: Valid done
 	headers = NewHeaders()
@@ -61,6 +62,8 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, 23, n)
+	assert.Equal(t, 23, n)
+	assert.Equal(t, "boom", headers["!#$%&'*+-.^_`|~"])
 	assert.False(t, done)
 
 	// Test: Valid special characters

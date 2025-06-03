@@ -35,7 +35,11 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 
 	headerName = strings.TrimSpace(headerName)
+	headerName = strings.ToLower(headerName)
+
 	headerValue = strings.TrimSpace(headerValue)
+	headerValue = strings.ToLower(headerValue)
+
 	h[headerName] = headerValue
 
 	return crlfIndex + len(crlf), false, nil
