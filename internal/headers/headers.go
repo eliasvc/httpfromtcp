@@ -2,6 +2,7 @@ package headers
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -10,6 +11,7 @@ type Headers map[string]string
 const crlf = "\r\n"
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
+	validHeader := regexp.MustCompile("^\\s*[A-Za-z0-9!#$%&'*+-.^_`|~]+$")
 	sData := string(data)
 	crlfIndex := strings.Index(sData, crlf)
 	// CRLF not found. Assume we need more data
@@ -23,11 +25,12 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 
 	headerName, headerValue, found := strings.Cut(sData[:crlfIndex], ":")
+	fmt.Printf("header-name: %q, header-value: %q\n", headerName, headerValue)
 	if !found {
 		return 0, false, fmt.Errorf("Malformed header: %q\n", headerName)
 	}
 
-	if strings.HasSuffix(headerName, " ") {
+	if !validHeader.Match([]byte(headerName)) {
 		return 0, false, fmt.Errorf("Malformed header: %q\n", headerName)
 	}
 
