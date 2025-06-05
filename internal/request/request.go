@@ -5,6 +5,8 @@ import (
 	"io"
 	"regexp"
 	"strings"
+
+	"httpfromtcp/internal/headers"
 )
 
 type parserState int
@@ -14,15 +16,25 @@ const (
 	Initialized
 )
 
+type requestHeaderParserState int
+
+const (
+	HeaderDone requestHeaderParserState = iota
+	HeaderInitialized
+)
+
 // Enum tracks the state of the parser:
 // - 0: done
 // - 1: initialized
 type Request struct {
-	RequestLine RequestLine
-	pState      parserState
+	RequestLine       RequestLine
+	Headers           headers.Headers
+	pState            parserState
+	headerParserState requestHeaderParserState
 }
 
 func (r *Request) parse(data []byte) (int, error) {
+	if 
 	n, requestLine, err := parseRequestLine(data)
 	// parser didn't find CRLF
 	if err == nil && n == 0 {
@@ -35,6 +47,8 @@ func (r *Request) parse(data []byte) (int, error) {
 
 	r.RequestLine = requestLine
 	r.pState = Done
+
+	n, h, err := parseHeaders(data[n:])
 	return n, nil
 }
 
@@ -58,7 +72,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Error parsing request-line: %q\n", err)
 		}
-		if request.pState == Done {
+		if request.pState == Done && request.headerParserState == HeaderDone {
 			return &request, nil
 		}
 
@@ -109,4 +123,18 @@ func parseRequestLine(inputRequest []byte) (int, RequestLine, error) {
 	requestLine.HttpVersion = httpVersion
 
 	return crlfIndex, requestLine, nil
+}
+
+// parseHeaders parses all headers in the HTTP request contained in data
+// A successful run will return n bytes consumed, a Headers with the parsed headers,
+// and nil for error
+func parseHeaders(data []byte) (int, headers.Headers, error) {
+	h := headers.NewHeaders()
+	done := false
+	totalParsed := 0
+
+	for !done {
+		n, done, err := h.parse(data)
+			
+	}
 }
