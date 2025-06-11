@@ -1,6 +1,7 @@
 package request
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -12,15 +13,15 @@ import (
 type parserState int
 
 const (
-	Done parserState = iota
-	Initialized
+	Initialized parserState = iota
+	Done
 )
 
 type requestHeaderParserState int
 
 const (
-	HeaderDone requestHeaderParserState = iota
-	HeaderInitialized
+	HeaderInitialized requestHeaderParserState = iota
+	HeaderDone
 )
 
 // Enum tracks the state of the parser:
@@ -31,25 +32,48 @@ type Request struct {
 	Headers           headers.Headers
 	pState            parserState
 	headerParserState requestHeaderParserState
+	totalBytesParsed  int
 }
 
+const crlf = "\r\n"
+
 func (r *Request) parse(data []byte) (int, error) {
-	if 
-	n, requestLine, err := parseRequestLine(data)
-	// parser didn't find CRLF
-	if err == nil && n == 0 {
-		r.pState = Initialized
-		return n, nil
-	}
-	if err != nil {
-		return 0, err
+	if r.pState == Initialized {
+		n, requestLine, err := parseRequestLine(data)
+		// parser didn't find CRLF
+		if err == nil && n == 0 {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		r.RequestLine = requestLine
+		r.pState = Done
+		r.totalBytesParsed += n
 	}
 
-	r.RequestLine = requestLine
-	r.pState = Done
+	if r.pState == Done && r.headerParserState == HeaderInitialized {
+		for i := 0; r.headerParserState != HeaderDone; i++ {
+			nParsed, done, err := r.Headers.Parse(data[r.totalBytesParsed:])
+			if err != nil {
+				return 0, err
+			}
+			// Need to read more data
+			if nParsed == 0 && !done {
+				return 0, nil
+			}
 
-	n, h, err := parseHeaders(data[n:])
-	return n, nil
+			if done {
+				r.headerParserState = HeaderDone
+				return r.totalBytesParsed, nil
+			}
+
+			r.totalBytesParsed += nParsed
+		}
+
+	}
+
+	return r.totalBytesParsed, nil
 }
 
 type RequestLine struct {
@@ -59,23 +83,35 @@ type RequestLine struct {
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	request := Request{}
+	request := Request{
+		Headers: headers.NewHeaders(),
+	}
 	buf := make([]byte, 0, 512)
-	for {
-		n, err := reader.Read(buf[len(buf):cap(buf)])
+	fmt.Println(">> Reading from stream")
+	for i := 0; ; i++ {
+		//if i == 350 {
+		//	fmt.Println(">> FORCED BREAK ON ReadFromReader")
+		//	fmt.Printf("buf: %q", buf)
+		//	fmt.Printf("totalBytesParsed: %q", request.totalBytesParsed)
+		//	return nil, fmt.Errorf("Parsign logic Error\n")
+		//}
+		n, readErr := reader.Read(buf[len(buf):cap(buf)])
 		buf = buf[:len(buf)+n]
-		if err != nil && err != io.EOF {
-			return nil, fmt.Errorf("Error reading request: %q\n", err.Error())
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return nil, fmt.Errorf("Error reading request: %q\n", readErr.Error())
 		}
 
-		_, err = request.parse(buf)
-		if err != nil {
-			return nil, fmt.Errorf("Error parsing request-line: %q\n", err)
+		n, parseErr := request.parse(buf)
+		if parseErr != nil {
+			return nil, fmt.Errorf("Error parsing request-line: %q\n", parseErr)
 		}
 		if request.pState == Done && request.headerParserState == HeaderDone {
 			return &request, nil
 		}
-
+		// If EOF was reached and the parsers are not done, something is wrong with the request
+		if errors.Is(readErr, io.EOF) {
+			return nil, fmt.Errorf("Malformed Request: %q\n", buf)
+		}
 		if len(buf) == cap(buf) {
 			// Use the io.ReadAll capacity extension trick
 			buf = append(buf, 0)[:len(buf)]
@@ -103,17 +139,17 @@ func parseRequestLine(inputRequest []byte) (int, RequestLine, error) {
 	// where SP is single space. So it has to have only 3 parts if devided by
 	// space
 	if len(parts) != 3 {
-		return crlfIndex, requestLine, fmt.Errorf("Malformed request-line: %q\n", requestLineText)
+		return crlfIndex + len(crlf), requestLine, fmt.Errorf("Malformed request-line: %q\n", requestLineText)
 	}
 
 	method, target, version := parts[0], parts[1], parts[2]
 
 	if !validMethod.MatchString(method) {
-		return crlfIndex, requestLine, fmt.Errorf("Malformed method in request-line: %q\n", requestLineText)
+		return crlfIndex + len(crlf), requestLine, fmt.Errorf("Malformed method in request-line: %q\n", requestLineText)
 	}
 
 	if validHTTPVersion != version {
-		return crlfIndex, requestLine, fmt.Errorf("Malformed HTTP version in request-line: %q\n", requestLineText)
+		return crlfIndex + len(crlf), requestLine, fmt.Errorf("Malformed HTTP version in request-line: %q\n", requestLineText)
 	}
 	versionParts := strings.Split(version, "/")
 	httpVersion := versionParts[1]
@@ -122,19 +158,5 @@ func parseRequestLine(inputRequest []byte) (int, RequestLine, error) {
 	requestLine.RequestTarget = target
 	requestLine.HttpVersion = httpVersion
 
-	return crlfIndex, requestLine, nil
-}
-
-// parseHeaders parses all headers in the HTTP request contained in data
-// A successful run will return n bytes consumed, a Headers with the parsed headers,
-// and nil for error
-func parseHeaders(data []byte) (int, headers.Headers, error) {
-	h := headers.NewHeaders()
-	done := false
-	totalParsed := 0
-
-	for !done {
-		n, done, err := h.parse(data)
-			
-	}
+	return crlfIndex + len(crlf), requestLine, nil
 }

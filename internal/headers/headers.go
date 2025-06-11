@@ -25,7 +25,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 
 	headerName, headerValue, found := strings.Cut(sData[:crlfIndex], ":")
-	fmt.Printf("header-name: %q, header-value: %q\n", headerName, headerValue)
+	//fmt.Printf(">>header-name: %q, header-value: %q\n", headerName, headerValue)
 	if !found {
 		return 0, false, fmt.Errorf("Malformed header: %q\n", headerName)
 	}
@@ -39,6 +39,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	headerValue = strings.TrimSpace(headerValue)
 
+	//fmt.Printf(">> Trimmed header-name: %q, header-value: %q\n", headerName, headerValue)
 	// Combine field-values if the same field-name is already present
 	if _, ok := h[headerName]; ok {
 		h[headerName] = fmt.Sprintf("%s, %s", h[headerName], headerValue)
@@ -50,5 +51,5 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 }
 
 func NewHeaders() Headers {
-	return Headers{}
+	return make(map[string]string)
 }
