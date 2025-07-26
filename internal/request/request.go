@@ -13,67 +13,58 @@ import (
 type parserState int
 
 const (
-	Initialized parserState = iota
+	RequestLineParsing parserState = iota
+	HeaderParsing
 	Done
-)
-
-type requestHeaderParserState int
-
-const (
-	HeaderInitialized requestHeaderParserState = iota
-	HeaderDone
 )
 
 // Enum tracks the state of the parser:
 // - 0: done
 // - 1: initialized
 type Request struct {
-	RequestLine       RequestLine
-	Headers           headers.Headers
-	pState            parserState
-	headerParserState requestHeaderParserState
-	totalBytesParsed  int
+	RequestLine RequestLine
+	Headers     headers.Headers
+	pState      parserState
 }
 
 const crlf = "\r\n"
 
 func (r *Request) parse(data []byte) (int, error) {
-	if r.pState == Initialized {
-		n, requestLine, err := parseRequestLine(data)
+	//fmt.Printf(">> request.parse data[]: %q\n", data)
+	switch r.pState {
+	case RequestLineParsing:
+		nParsed, requestLine, err := parseRequestLine(data)
 		// parser didn't find CRLF
-		if err == nil && n == 0 {
+		if err == nil && nParsed == 0 {
 			return 0, nil
 		}
 		if err != nil {
 			return 0, err
 		}
 		r.RequestLine = requestLine
-		r.pState = Done
-		r.totalBytesParsed += n
-	}
-
-	if r.pState == Done && r.headerParserState == HeaderInitialized {
-		for i := 0; r.headerParserState != HeaderDone; i++ {
-			nParsed, done, err := r.Headers.Parse(data[r.totalBytesParsed:])
+		r.pState = HeaderParsing
+		return nParsed, nil
+	case HeaderParsing:
+		for {
+			nParsed, done, err := r.Headers.Parse(data)
 			if err != nil {
 				return 0, err
 			}
-			// Need to read more data
-			if nParsed == 0 && !done {
-				return 0, nil
+			if !done {
+				// Need to read more data
+				if nParsed == 0 {
+					return 0, nil
+				}
+				// A header was successfully parsed
+				return nParsed, nil
 			}
 
-			if done {
-				r.headerParserState = HeaderDone
-				return r.totalBytesParsed, nil
-			}
-
-			r.totalBytesParsed += nParsed
+			r.pState = Done
+			return nParsed, nil
 		}
-
+	default:
+		return 0, fmt.Errorf("Unknown parsing state")
 	}
-
-	return r.totalBytesParsed, nil
 }
 
 type RequestLine struct {
@@ -87,25 +78,19 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		Headers: headers.NewHeaders(),
 	}
 	buf := make([]byte, 0, 512)
-	fmt.Println(">> Reading from stream")
-	for i := 0; ; i++ {
-		//if i == 350 {
-		//	fmt.Println(">> FORCED BREAK ON ReadFromReader")
-		//	fmt.Printf("buf: %q", buf)
-		//	fmt.Printf("totalBytesParsed: %q", request.totalBytesParsed)
-		//	return nil, fmt.Errorf("Parsign logic Error\n")
-		//}
+	bytesParsed := 0
+	for {
 		n, readErr := reader.Read(buf[len(buf):cap(buf)])
 		buf = buf[:len(buf)+n]
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
 			return nil, fmt.Errorf("Error reading request: %q\n", readErr.Error())
 		}
-
-		n, parseErr := request.parse(buf)
+		//fmt.Printf(">> buf index passed: %d\n", bytesParsed)
+		nParsed, parseErr := request.parse(buf[bytesParsed:])
 		if parseErr != nil {
 			return nil, fmt.Errorf("Error parsing request-line: %q\n", parseErr)
 		}
-		if request.pState == Done && request.headerParserState == HeaderDone {
+		if request.pState == Done {
 			return &request, nil
 		}
 		// If EOF was reached and the parsers are not done, something is wrong with the request
@@ -115,6 +100,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if len(buf) == cap(buf) {
 			// Use the io.ReadAll capacity extension trick
 			buf = append(buf, 0)[:len(buf)]
+		}
+		// A portion of the request was successfully parsed and no longer needed.
+		if nParsed > 0 {
+			buf = buf[nParsed:]
 		}
 	}
 }
