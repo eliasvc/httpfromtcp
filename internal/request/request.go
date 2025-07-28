@@ -24,6 +24,7 @@ const (
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	pState      parserState
 }
 
@@ -45,23 +46,21 @@ func (r *Request) parse(data []byte) (int, error) {
 		r.pState = HeaderParsing
 		return nParsed, nil
 	case HeaderParsing:
-		for {
-			nParsed, done, err := r.Headers.Parse(data)
-			if err != nil {
-				return 0, err
+		nParsed, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if !done {
+			// Need to read more data
+			if nParsed == 0 {
+				return 0, nil
 			}
-			if !done {
-				// Need to read more data
-				if nParsed == 0 {
-					return 0, nil
-				}
-				// A header was successfully parsed
-				return nParsed, nil
-			}
-
-			r.pState = Done
+			// A header was successfully parsed
 			return nParsed, nil
 		}
+
+		r.pState = Done
+		return nParsed, nil
 	default:
 		return 0, fmt.Errorf("Unknown parsing state")
 	}
